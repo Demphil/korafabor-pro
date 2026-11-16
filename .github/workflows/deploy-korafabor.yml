@@ -1,0 +1,78 @@
+name: Deploy KoraFabor Pages
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4,10,16,22 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-korafabor.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: korafabor-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout public website source
+        uses: actions/checkout@v4
+        with:
+          repository: Demphil/koratv-web
+          ref: main
+          path: source
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+
+      - name: Install build dependencies
+        working-directory: source
+        run: npm ci --ignore-scripts --no-audit --fund=false
+
+      - name: Run publication checks
+        working-directory: source
+        run: |
+          node --test scripts/build-public-site.test.cjs scripts/migrate-korafabor.test.cjs scripts/public-match-feed.test.mjs
+
+      - name: Build and brand public site
+        working-directory: source
+        run: |
+          set -euo pipefail
+          node scripts/build-complete-site.cjs
+          node scripts/migrate-korafabor.cjs
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = '_site/index.html';
+          const marker = 'window.__MATCHES_API_ORIGIN__=location.origin;';
+          const html = fs.readFileSync(file, 'utf8');
+          if (!html.includes(marker)) throw new Error('Expected API origin marker was not found');
+          fs.writeFileSync(file, html.replace(marker, "window.__MATCHES_API_ORIGIN__='https://stream-api.koratv.click';"));
+          NODE
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload public website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: source/_site
+
+      - name: Deploy public website
+        id: deployment
+        uses: actions/deploy-pages@v4
