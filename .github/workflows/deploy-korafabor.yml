@@ -52,6 +52,8 @@ jobs:
 
       - name: Build and brand public site
         working-directory: source
+        env:
+          SITE_MATCHES_SNAPSHOT_URL: https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json
         run: |
           set -euo pipefail
           node scripts/build-complete-site.cjs
